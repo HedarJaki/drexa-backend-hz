@@ -2,8 +2,13 @@ package auth
 
 import "context"
 
-// AuthUsecase handles user-facing authentication flows
+// AuthUsecase handles all user-facing authentication flows.
 type AuthUsecase interface {
+<<<<<<< HEAD
+	// Registration & login
+	Register(ctx context.Context, email, phone, password string) (*User, error)
+	Login(ctx context.Context, email, password string) (*AuthToken, error)
+=======
 	// Register creates a new user with email + password, then issues a token pair
 	Register(ctx context.Context, email, password, username string) (*AuthToken, error)
 
@@ -13,31 +18,28 @@ type AuthUsecase interface {
 	// Phone verification — backend handles phone OTP for trading compliance
 	SendPhoneVerificationOTP(ctx context.Context, userID string) error
 	VerifyPhone(ctx context.Context, userID, otp string) (bool, error)
+>>>>>>> e448e44364a4225c0819ff59d6af60c71d778498
 
 	// Session management
-	RefreshToken(ctx context.Context, refreshToken string) (*AuthToken, error)
-	Logout(ctx context.Context, refreshToken string) error
+	RefreshToken(ctx context.Context, rawRefreshToken string) (*AuthToken, error)
+	Logout(ctx context.Context, rawRefreshToken string) error
 	LogoutAll(ctx context.Context, userID string) error
 
+	// Credential management
+	ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error
+
+	// Phone OTP — used during onboarding and sensitive actions
+	SendPhoneOTP(ctx context.Context, userID string) error
+	VerifyPhoneOTP(ctx context.Context, userID, otp string) error
+
 	// Trading PIN — required before executing trades or withdrawals
-	SetTradingPin(ctx context.Context, userID, pin string) error
-	VerifyTradingPin(ctx context.Context, userID, pin string) (bool, error)
+	SetTradingPIN(ctx context.Context, userID, pin string) error
+	VerifyTradingPIN(ctx context.Context, userID, pin string) (bool, error)
+
+	// Two-factor authentication (TOTP)
+	InitiateTwoFA(ctx context.Context, userID string) (*TwoFASetup, error)
+	ConfirmTwoFA(ctx context.Context, userID, code string) error
+	DisableTwoFA(ctx context.Context, userID, code string) error
+	VerifyTwoFA(ctx context.Context, userID, code string) (*AuthToken, error)
 }
 
-// KycUsecase handles user-facing KYC submission and status checks
-type KycUsecase interface {
-	Submit(ctx context.Context, userID string, kyc *KycProfile) error
-	GetByUserID(ctx context.Context, userID string) (*KycProfile, error) // user checks their own status
-	IsVerified(ctx context.Context, userID string) (bool, error)
-	IsExpired(ctx context.Context, userID string) (bool, error)
-}
-
-// AdminKycUsecase handles admin-facing KYC review operations
-type AdminKycUsecase interface {
-	ListByStatus(ctx context.Context, status KycStatus) ([]KycProfile, error) // admin review queue
-	GetByID(ctx context.Context, kycID string) (*KycProfile, error)
-	GetDecryptedNIK(ctx context.Context, kycID string) (string, error) // decrypts NIK for admin review
-	Approve(ctx context.Context, kycID, reviewedBy string) error
-	Reject(ctx context.Context, kycID, reviewedBy, reason string) error
-	UpdateStatus(ctx context.Context, kycID string, status KycStatus) error
-}

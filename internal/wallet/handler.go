@@ -294,8 +294,8 @@ func HandleInitiateWithdrawal(uc WalletUsecase) http.HandlerFunc {
 			return
 		}
 
-		// KYC gate — withdrawal requires KYC approval
-		if !claims.IsKycVerified {
+		// KYC gate — withdrawal requires an approved KYC submission (level >= 1)
+		if claims.KycLevel < 1 {
 			sendJSON(w, http.StatusForbidden, MessageResponse{Error: "KYC verification required before withdrawal"})
 			return
 		}
