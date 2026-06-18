@@ -372,7 +372,61 @@ func HandleGetTransactions(uc WalletUsecase) http.HandlerFunc {
 	}
 }
 
+// HandleTransfer transfers funds to another user
+func HandleTransfer(uc WalletUsecase) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := userFromCtx(r)
+		if !ok {
+			sendJSON(w, http.StatusUnauthorized, MessageResponse{Error: "unauthorized"})
+			return
+		}
+
+		var req InternalTransferRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			sendJSON(w, http.StatusBadRequest, MessageResponse{Error: "invalid request body"})
+			return
+		}
+		req.FromUserID = claims.UserID
+		req.Currency = normalizeCurrency(string(req.Currency))
+
+		tx, err := uc.Transfer(r.Context(), &req)
+		if err != nil {
+			sendJSON(w, http.StatusInternalServerError, MessageResponse{Error: err.Error()})
+			return
+		}
+
+		sendJSON(w, http.StatusOK, tx)
+	}
+}
+
+// HandleCryptoWithdrawal initiates an on-chain crypto withdrawal
+func HandleCryptoWithdrawal(uc WalletUsecase) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := userFromCtx(r)
+		if !ok {
+			sendJSON(w, http.StatusUnauthorized, MessageResponse{Error: "unauthorized"})
+			return
+		}
+
+		var req InitiateCryptoWithdrawalRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			sendJSON(w, http.StatusBadRequest, MessageResponse{Error: "invalid request body"})
+			return
+		}
+		req.Currency = normalizeCurrency(string(req.Currency))
+
+		tx, err := uc.InitiateCryptoWithdrawal(r.Context(), claims.UserID, &req)
+		if err != nil {
+			sendJSON(w, http.StatusInternalServerError, MessageResponse{Error: err.Error()})
+			return
+		}
+
+		sendJSON(w, http.StatusOK, tx)
+	}
+}
+
 // ─── Admin Wallet Handlers ────────────────────────────────────────────────────
+
 
 // HandleAdminListWithdrawals lists all pending withdrawals for admin review
 func HandleAdminListWithdrawals(uc AdminWalletUsecase) http.HandlerFunc {

@@ -89,7 +89,6 @@ type Transaction struct {
 
 // DepositRequest tracks a pending fiat deposit before it is confirmed by the payment provider
 type DepositRequest struct {
-<<<<<<< HEAD
 	DepositID   string            `gorm:"primaryKey;column:deposit_id"`
 	UserID      string            `gorm:"column:user_id;index"`
 	WalletID    string            `gorm:"column:wallet_id;index"`
@@ -102,20 +101,6 @@ type DepositRequest struct {
 	ConfirmedAt *time.Time        `gorm:"column:confirmed_at"`
 	CreatedAt   time.Time         `gorm:"column:created_at;autoCreateTime"`
 	ModifiedAt  time.Time         `gorm:"column:modified_at;autoUpdateTime"`
-=======
-	DepositID       string    `gorm:"primaryKey;column:deposit_id"`
-	UserID          string    `gorm:"column:user_id;index"`
-	WalletID        string    `gorm:"column:wallet_id;index"`
-	Amount          int64     `gorm:"column:amount"`
-	Currency        CurrencyCode `gorm:"column:currency"`
-	Provider        string    `gorm:"column:provider"`                 // "stripe", "midtrans", etc.
-	ProviderRef     string    `gorm:"column:provider_ref;size:191;uniqueIndex"` // provider's payment/session ID
-	Status          TransactionStatus `gorm:"column:status;default:pending"`
-	ExpiresAt       time.Time `gorm:"column:expires_at"`
-	ConfirmedAt     *time.Time `gorm:"column:confirmed_at"`
-	CreatedAt       time.Time `gorm:"column:created_at;autoCreateTime"`
-	ModifiedAt      time.Time `gorm:"column:modified_at;autoUpdateTime"`
->>>>>>> e448e44364a4225c0819ff59d6af60c71d778498
 }
 
 // WithdrawalRequest tracks a pending fiat withdrawal pending compliance review
@@ -145,8 +130,33 @@ type CryptoAddress struct {
 	Chain           string       `gorm:"column:chain;size:32"`    // e.g. "bitcoin", "ethereum"
 	Address         string       `gorm:"column:address;size:128;index"`
 	Xpub            string       `gorm:"column:xpub;size:255"`    // extended public key (deposit-only; cannot spend)
-	DerivationIndex int          `gorm:"column:derivation_index"`
-	CreatedAt       time.Time    `gorm:"column:created_at;autoCreateTime"`
+	DerivationIndex int       `gorm:"column:derivation_index"`
+	CreatedAt       time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+// ─── Sharedwallet DTOs ────────────────────────────────────────────────────────────
+
+type WebhookPayload struct {
+	Address       string `json:"address"`
+	Amount        string `json:"amount"` // decimal string
+	Asset         string `json:"asset"`
+	BlockNumber   int    `json:"blockNumber"`
+	Confirmations int    `json:"confirmations"`
+	TxId          string `json:"txId"`
+	Type          string `json:"type"`
+}
+
+type InternalTransferRequest struct {
+	FromUserID string       `json:"from_user_id"`
+	ToUserID   string       `json:"to_user_id"`
+	Currency   CurrencyCode `json:"currency"`
+	Amount     int64        `json:"amount"` // in smallest unit
+}
+
+type InitiateCryptoWithdrawalRequest struct {
+	Amount    int64        `json:"amount"` // in smallest unit
+	Currency  CurrencyCode `json:"currency"`
+	ToAddress string       `json:"to_address"`
 }
 
 // ─── Domain Errors ───────────────────────────────────────────────────────────

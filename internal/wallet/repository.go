@@ -61,6 +61,7 @@ type DepositRepository interface {
 type CryptoAddressRepository interface {
 	Create(ctx context.Context, addr *CryptoAddress) error
 	FindByUserAndCurrency(ctx context.Context, userID string, currency CurrencyCode) (*CryptoAddress, error)
+	FindByAddress(ctx context.Context, address string) (*CryptoAddress, error)
 }
 
 // WithdrawalRepository handles persistence for withdrawal requests

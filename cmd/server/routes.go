@@ -17,6 +17,7 @@ func addRoutes(
 	orderSvc order.Service,
 	walletUc wallet.WalletUsecase,
 	adminWalletUc wallet.AdminWalletUsecase,
+	cryptoWalletUc wallet.CryptoWalletUsecase,
 	marketHub *market.Hub,
 	tokenSvc auth.TokenService,
 ) {
@@ -65,9 +66,16 @@ func addRoutes(
 	mux.Handle("POST /api/v1/wallet/deposit",            jwt(wallet.HandleInitiateDeposit(walletUc)))
 	mux.Handle("POST /api/v1/wallet/withdraw",           jwt(wallet.HandleInitiateWithdrawal(walletUc)))
 	mux.Handle("GET /api/v1/wallet/transactions",        jwt(wallet.HandleGetTransactions(walletUc)))
+	mux.Handle("POST /api/v1/wallet/transfer",           jwt(wallet.HandleTransfer(walletUc)))
+
+	// ── Wallet — Crypto (JWT required) ────────────────────────────────────────
+	mux.Handle("GET /api/v1/wallet/crypto/address/{currency}", jwt(wallet.HandleGetCryptoAddress(cryptoWalletUc)))
+	mux.Handle("GET /api/v1/wallet/crypto/assets",             jwt(wallet.HandleGetCryptoAssets(cryptoWalletUc)))
+	mux.Handle("POST /api/v1/wallet/crypto/withdraw",          jwt(wallet.HandleCryptoWithdrawal(walletUc)))
 
 	// ── Wallet — payment provider webhook (public; verify signature in prod) ───
 	mux.Handle("POST /api/v1/wallet/deposit/webhook", wallet.HandleDepositWebhook(walletUc))
+	mux.Handle("POST /api/v1/wallet/crypto/webhook",  wallet.HandleCryptoWebhook(cryptoWalletUc))
 
 	// ── Wallet — admin facing (JWT + admin role) ──────────────────────────────
 	mux.Handle("GET /api/v1/admin/wallet/withdrawals",                       jwt(admin(wallet.HandleAdminListWithdrawals(adminWalletUc))))

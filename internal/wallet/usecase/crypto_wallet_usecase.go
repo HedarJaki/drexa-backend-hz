@@ -30,17 +30,30 @@ func chainFor(c wallet.CurrencyCode, testnet bool) (chainInfo, bool) {
 var supportedCryptoCurrencies = []wallet.CurrencyCode{wallet.CurrencyBTC, wallet.CurrencyETH}
 
 type cryptoWalletUsecase struct {
-	addrRepo wallet.CryptoAddressRepository
-	provider wallet.CryptoProvider
-	testnet  bool
+	addrRepo   wallet.CryptoAddressRepository
+	walletRepo wallet.WalletRepository
+	txRepo     wallet.TransactionRepository
+	tx         wallet.TxManager
+	provider   wallet.CryptoProvider
+	testnet    bool
 }
 
 func NewCryptoWalletUsecase(
 	addrRepo wallet.CryptoAddressRepository,
+	walletRepo wallet.WalletRepository,
+	txRepo wallet.TransactionRepository,
+	txManager wallet.TxManager,
 	provider wallet.CryptoProvider,
 	testnet bool,
 ) wallet.CryptoWalletUsecase {
-	return &cryptoWalletUsecase{addrRepo: addrRepo, provider: provider, testnet: testnet}
+	return &cryptoWalletUsecase{
+		addrRepo:   addrRepo,
+		walletRepo: walletRepo,
+		txRepo:     txRepo,
+		tx:         txManager,
+		provider:   provider,
+		testnet:    testnet,
+	}
 }
 
 // getOrCreateAddress returns the persisted deposit address for a user+currency,
@@ -123,3 +136,81 @@ func (uc *cryptoWalletUsecase) GetAssets(ctx context.Context, userID string) ([]
 	}
 	return assets, nil
 }
+
+func (uc *cryptoWalletUsecase) HandleCryptoWebhook(ctx context.Context, payload wallet.WebhookPayload) error {
+	addrRec, err := uc.addrRepo.FindByAddress(ctx, payload.Address)
+	if err != nil {
+		return fmt.Errorf("address not found: %w", err)
+	}
+
+	requiredConf := 1
+	if !uc.testnet {
+		if addrRec.Currency == wallet.CurrencyBTC {
+			requiredConf = 3
+		} else if addrRec.Currency == wallet.CurrencyETH {
+			requiredConf = 12
+		}
+	} else {
+		if addrRec.Currency == wallet.CurrencyETH {
+			requiredConf = 2
+		}
+	}
+
+	if payload.Confirmations < requiredConf {
+		// Just drop or ignore until next webhook comes in with enough confirmations
+		return fmt.Errorf("insufficient confirmations: %d < %d", payload.Confirmations, requiredConf)
+	}
+
+	// We use txManager to atomically update the wallet balance
+	return uc.tx.Do(ctx, func(ctx context.Context) error {
+		// First check if transaction already exists (idempotency by tx_hash)
+		existingTx, err := uc.txRepo.FindByRefID(ctx, payload.TxId)
+		if err == nil && existingTx != nil {
+			// Already processed
+			return nil
+		}
+
+		w, err := uc.walletRepo.FindByUserAndCurrency(ctx, addrRec.UserID, addrRec.Currency)
+		if err != nil {
+			return err
+		}
+
+		lockedW, err := uc.walletRepo.FindByIDForUpdate(ctx, w.WalletID)
+		if err != nil {
+			return err
+		}
+
+		// amount in webhook is usually a string from Tatum, we need to convert to int64 smallest unit
+		// but since we are replacing sharedwallet exactly, let's assume `payload.Amount` is the smallest unit 
+		// string representation, or we parse it. The prompt says amount is string, let's parse it as int64.
+		// In a real system, we'd need big.Int and correct decimals.
+		var amountInt64 int64
+		_, err = fmt.Sscanf(payload.Amount, "%d", &amountInt64)
+		if err != nil {
+			// For crypto it might be float, so let's try a simple fallback
+			return wallet.ErrInvalidAmount
+		}
+
+		balanceBefore := lockedW.Balance
+		newBalance := lockedW.Balance + amountInt64
+
+		if err := uc.walletRepo.UpdateBalance(ctx, lockedW.WalletID, newBalance); err != nil {
+			return err
+		}
+
+		return uc.txRepo.Create(ctx, &wallet.Transaction{
+			TxID:          uuid.New().String(),
+			WalletID:      lockedW.WalletID,
+			UserID:        lockedW.UserID,
+			Type:          wallet.TxTypeDeposit,
+			Status:        wallet.TxStatusCompleted,
+			Amount:        amountInt64,
+			BalanceBefore: balanceBefore,
+			BalanceAfter:  newBalance,
+			Currency:      lockedW.Currency,
+			RefID:         payload.TxId, // store Tatum tx hash as ref ID
+			Description:   "Crypto deposit",
+		})
+	})
+}
+

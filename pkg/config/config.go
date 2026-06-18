@@ -13,6 +13,7 @@ type Config struct {
 	JWT      JWTConfig
 	Twilio   TwilioConfig
 	SendGrid SendGridConfig
+	Tatum    TatumConfig
 }
 
 type AppConfig struct {
@@ -47,6 +48,10 @@ type SendGridConfig struct {
 	FromEmail string
 	FromName  string
 	AppURL    string
+}
+
+type TatumConfig struct {
+	APIKey  string
 }
 
 func Load() *Config {
@@ -92,6 +97,9 @@ func Load() *Config {
 			FromEmail: viper.GetString("SENDGRID_FROM_EMAIL"),
 			FromName:  viper.GetString("SENDGRID_FROM_NAME"),
 			AppURL:    viper.GetString("APP_URL"),
+		},
+		Tatum: TatumConfig{
+			APIKey: viper.GetString("TATUM_TESTNET_API_KEY"),
 		},
 	}
 }

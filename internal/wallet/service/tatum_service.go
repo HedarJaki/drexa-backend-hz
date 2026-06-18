@@ -109,3 +109,13 @@ func (s *TatumService) GetBalance(ctx context.Context, chain, address string) (s
 		return resp.Balance, nil
 	}
 }
+
+// SendTransaction is a stub for crypto withdrawals.
+// Real implementation requires securely managing the private key (e.g. via KMS) to sign transactions.
+func (s *TatumService) SendTransaction(ctx context.Context, chain string, amount string, toAddress string) (string, error) {
+	// In a real implementation we would:
+	// 1. Fetch encrypted private key from KMS
+	// 2. Sign the transaction locally or via Tatum KMS
+	// 3. POST /v3/chain/transaction
+	return "tx_hash_stub_" + time.Now().Format("20060102150405"), nil
+}

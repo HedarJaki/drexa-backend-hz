@@ -21,6 +21,10 @@ type WalletUsecase interface {
 
 	// Transaction history
 	GetTransactions(ctx context.Context, userID string, page, pageSize int) ([]Transaction, error)
+
+	// Transfer and Crypto
+	Transfer(ctx context.Context, req *InternalTransferRequest) (*Transaction, error)
+	InitiateCryptoWithdrawal(ctx context.Context, userID string, req *InitiateCryptoWithdrawalRequest) (*Transaction, error)
 }
 
 // AdminWalletUsecase handles admin-facing wallet operations
@@ -43,6 +47,9 @@ type CryptoWalletUsecase interface {
 
 	// GetAssets returns every supported on-chain asset for the user with live balances.
 	GetAssets(ctx context.Context, userID string) ([]CryptoAsset, error)
+
+	// HandleCryptoWebhook processes Tatum's incoming deposit webhook
+	HandleCryptoWebhook(ctx context.Context, payload WebhookPayload) error
 }
 
 // CryptoProvider abstracts the external crypto infrastructure (Tatum).
@@ -53,6 +60,8 @@ type CryptoProvider interface {
 	DeriveAddress(ctx context.Context, chain, xpub string, index int) (address string, err error)
 	// GetBalance returns the address's confirmed balance as a decimal string (in the coin's main unit).
 	GetBalance(ctx context.Context, chain, address string) (balance string, err error)
+	// SendTransaction sends a crypto transaction and returns the transaction hash.
+	SendTransaction(ctx context.Context, chain string, amount string, toAddress string) (txHash string, err error)
 }
 
 // CryptoAsset is the user-facing view of an on-chain asset.

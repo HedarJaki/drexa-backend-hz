@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 )
@@ -52,5 +53,23 @@ func HandleGetCryptoAssets(uc CryptoWalletUsecase) http.HandlerFunc {
 		}
 
 		sendJSON(w, http.StatusOK, assets)
+	}
+}
+
+// HandleCryptoWebhook processes Tatum's incoming deposit webhook
+func HandleCryptoWebhook(uc CryptoWalletUsecase) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var payload WebhookPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			sendJSON(w, http.StatusBadRequest, MessageResponse{Error: "invalid request body"})
+			return
+		}
+
+		if err := uc.HandleCryptoWebhook(r.Context(), payload); err != nil {
+			sendJSON(w, http.StatusInternalServerError, MessageResponse{Error: err.Error()})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
 	}
 }

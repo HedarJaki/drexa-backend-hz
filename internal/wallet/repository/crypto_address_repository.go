@@ -34,3 +34,17 @@ func (r *cryptoAddressRepository) FindByUserAndCurrency(ctx context.Context, use
 	}
 	return &addr, nil
 }
+
+func (r *cryptoAddressRepository) FindByAddress(ctx context.Context, address string) (*wallet.CryptoAddress, error) {
+	var addr wallet.CryptoAddress
+	err := dbFromContext(ctx, r.db).
+		Where("address = ?", address).
+		First(&addr).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, wallet.ErrCryptoAddressNotFound
+		}
+		return nil, err
+	}
+	return &addr, nil
+}
