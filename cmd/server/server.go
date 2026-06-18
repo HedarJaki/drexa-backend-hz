@@ -55,14 +55,14 @@ type Server struct {
 
 func NewServer(cfg *config.Config, db *gorm.DB) *Server {
 	// ── Auth repositories ─────────────────────────────────────────────────────
-	userRepo         := authRepo.NewUserRepository(db)
+	userRepo := authRepo.NewUserRepository(db)
 	refreshTokenRepo := authRepo.NewRefreshTokenRepository(db)
-	otpRepo          := authRepo.NewOTPRepository(db)
+	otpRepo := authRepo.NewOTPRepository(db)
 
 	// ── Auth services ─────────────────────────────────────────────────────────
-	emailSender  := authSvc.NewSendGridEmailSender(cfg.SendGrid.APIKey, cfg.SendGrid.FromEmail, cfg.SendGrid.FromName)
-	smsSender    := authSvc.NewTwilioSMSSender(cfg.Twilio.AccountSID, cfg.Twilio.AuthToken, cfg.Twilio.FromPhone)
-	otpService   := authSvc.NewOTPService(otpRepo, emailSender, smsSender)
+	emailSender := authSvc.NewSendGridEmailSender(cfg.SendGrid.APIKey, cfg.SendGrid.FromEmail, cfg.SendGrid.FromName)
+	smsSender := authSvc.NewTwilioSMSSender(cfg.Twilio.AccountSID, cfg.Twilio.AuthToken, cfg.Twilio.FromPhone)
+	otpService := authSvc.NewOTPService(otpRepo, emailSender, smsSender)
 	tokenService := authSvc.NewTokenService(
 		[]byte(cfg.JWT.Secret),
 		"drexa.api",
@@ -71,13 +71,13 @@ func NewServer(cfg *config.Config, db *gorm.DB) *Server {
 	)
 
 	// ── Auth usecase ──────────────────────────────────────────────────────────
-	authUsecase := authUc.NewAuthUsecase(userRepo, refreshTokenRepo, otpService, tokenService)
+	authUsecase := authUc.NewAuthUsecase(userRepo, refreshTokenRepo, otpService, tokenService, cfg.Google.ClientID)
 
 	// ── KYC domain ────────────────────────────────────────────────────────────
-	kycRepository   := kycRepo.New(db)
-	kycUserSvc      := &kycUserServiceAdapter{repo: userRepo}
-	kycNotifSvc     := kycSvc.NewMockNotificationService()
-	kycUsecase      := kycUc.New(kycRepository, kycUserSvc)
+	kycRepository := kycRepo.New(db)
+	kycUserSvc := &kycUserServiceAdapter{repo: userRepo}
+	kycNotifSvc := kycSvc.NewMockNotificationService()
+	kycUsecase := kycUc.New(kycRepository, kycUserSvc)
 	adminKycUsecase := kycUc.NewAdmin(kycRepository, kycUserSvc, kycNotifSvc)
 
 	// Didit identity verification (optional — only when an API key is configured).
@@ -105,16 +105,16 @@ func NewServer(cfg *config.Config, db *gorm.DB) *Server {
 
 	// ── Order domain ──────────────────────────────────────────────────────────
 	orderRepository := orderRepo.New(db)
-	pairService     := orderRepo.NewPairService(db)
-	matchingEngine  := matching.NewEngine()
-	orderService    := order.NewService(orderRepository, pairService, matchingEngine)
+	pairService := orderRepo.NewPairService(db)
+	matchingEngine := matching.NewEngine()
+	orderService := order.NewService(orderRepository, pairService, matchingEngine)
 
 	// ── Wallet domain ─────────────────────────────────────────────────────────
-	walletRepository     := walletRepo.NewWalletRepository(db)
-	txRepository         := walletRepo.NewTransactionRepository(db)
-	depositRepository    := walletRepo.NewDepositRepository(db)
+	walletRepository := walletRepo.NewWalletRepository(db)
+	txRepository := walletRepo.NewTransactionRepository(db)
+	depositRepository := walletRepo.NewDepositRepository(db)
 	withdrawalRepository := walletRepo.NewWithdrawalRepository(db)
-	cryptoAddressRepo    := walletRepo.NewCryptoAddressRepository(db)
+	cryptoAddressRepo := walletRepo.NewCryptoAddressRepository(db)
 	paymentService := walletSvc.NewNullPaymentService()
 	if cfg.Stripe.SecretKey != "" {
 		paymentService = walletSvc.NewStripePaymentService(cfg.Stripe.SecretKey, cfg.SendGrid.AppURL)

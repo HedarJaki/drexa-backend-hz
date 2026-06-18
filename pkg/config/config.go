@@ -29,6 +29,11 @@ type Config struct {
 	Tatum    TatumConfig
 	Stripe   StripeConfig
 	Didit    DiditConfig
+	Google   GoogleConfig
+}
+
+type GoogleConfig struct {
+	ClientID string
 }
 
 type AppConfig struct {
@@ -154,6 +159,8 @@ func Load() *Config {
 			APIKey:        viper.GetString("DIDIT_API_KEY"),
 			WebhookSecret: viper.GetString("DIDIT_WEBHOOK_SECRET"),
 			WorkflowID:    viper.GetString("DIDIT_WORKFLOW_ID"),
+		Google: GoogleConfig{
+			ClientID: viper.GetString("GOOGLE_CLIENT_ID"),
 		},
 	}
 }
