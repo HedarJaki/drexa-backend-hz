@@ -103,7 +103,7 @@ drexa-backend/
 │   ├── wallet/              # domain.go — full impl in Fase 2
 │   ├── market/              # domain.go — full impl in Fase 3
 │   ├── order/               # domain.go — full impl in Fase 4A
-│   ├── p2p/                 # domain.go — full impl in Fase 4B
+│   ├── p2p/                 # marketplace: domain/repo/usecase/handler + chain/ (go-ethereum escrow client)
 │   │
 │   └── platform/            # infrastruktur shared, bukan domain bisnis
 │       ├── postgres/        # GORM + pgx connection
@@ -126,8 +126,11 @@ drexa-backend/
 │   ├── 000006_p2p.{up,down}.sql      # p2p_advertisements, p2p_orders, p2p_disputes
 │   ├── 000007_checkout.{up,down}.sql # purchases (Stripe managed checkout)
 │   ├── 000008_didit_kyc.{up,down}.sql# didit session columns + processed-events idempotency
-│   └── 000009_wallet_paypal.{up,down}.sql # withdrawal_requests.paypal_email (PayPal payouts)
+│   ├── 000009_wallet_paypal.{up,down}.sql # withdrawal_requests.paypal_email (PayPal payouts)
+│   └── 000010_p2p_chain.{up,down}.sql # on-chain escrow cols (buyer/seller addr, tx hashes, escrow_state)
 │
+├── contracts/               # Hardhat project: P2PEscrow.sol + ABI/bytecode + deploy
+├── cmd/escrow-deploy/        # deploy P2PEscrow from Go (no Hardhat needed)
 ├── .env
 ├── go.mod
 └── CLAUDE.md
@@ -189,12 +192,20 @@ PostgreSQL runs on port `5432`. Server starts on `:8080`.
 - [ ] **4A.3 Trade execution & settlement** — atomic ledger entries; Trade entity in schema
 - [ ] **4A.4 Order book WebSocket feed** — diff publish + sequence numbers
 
-### Fase 4B — P2P Marketplace
+### Fase 4B — P2P Marketplace (on-chain smart-contract escrow)
 
-- [ ] **4B.1 Advertisement system** — P2PAdvertisement in schema; handlers TODO
-- [ ] **4B.2 Escrow engine** — P2POrder + escrow wallet; auto-cancel on timeout
-- [ ] **4B.3 Payment confirmation flow** — buyer → paid → seller confirm → release
-- [ ] **4B.4 Dispute & resolution system** — P2PDispute in schema; admin resolution
+- [x] **4B.1 Advertisement system** — full domain/repo/usecase/handler; create, list (filter by pair/payment/status), get, my-ads, pause/resume/complete; seller sets an EVM payout address per ad
+- [x] **4B.2 Escrow engine** — **on-chain** via `P2PEscrow.sol` (`contracts/`); creating an order funds an escrow on-chain (platform-operated, arbiter = backend signer); state mirrored in `p2p_orders`
+- [x] **4B.3 Payment confirmation flow** — created → (buyer) markPaid → (seller) release → on-chain payout to buyer; cancel before paid refunds the seller; expiry tracked via `expired_at`
+- [x] **4B.4 Dispute & resolution system** — buyer/seller open dispute (freezes escrow on-chain); admin `resolveDispute(toBuyer)` force-releases or force-refunds on-chain; `P2PDispute` audit trail
+
+> **P2P escrow is on-chain, not the internal ledger.** The Go backend (`internal/p2p/chain`,
+> go-ethereum) operates `P2PEscrow.sol` as the sole arbiter — funding escrows on sellers'
+> behalf (custodial), releasing to buyers, refunding sellers. Buyer/seller payout addresses
+> are EVM addresses supplied per order/ad. Configure via `ESCROW_*` env; deploy with
+> `go run ./cmd/escrow-deploy` or Hardhat (`contracts/README.md`). Falls back to a disabled
+> client (endpoints return 503) when `ESCROW_*` is unset. NOTE: not yet coupled to the
+> wallet ledger — on-chain escrow is the authoritative crypto leg for P2P trades.
 
 ### Fase 5 — Production Hardening
 

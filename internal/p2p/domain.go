@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -44,12 +45,16 @@ type P2PAdvertisement struct {
 	MaxAmount       float64             `gorm:"column:max_amount;type:numeric(36,18)"`
 	PaymentMethod   string              `gorm:"column:payment_method"` // e.g. "BCA", "Mandiri"
 	PaymentWindow   int                 `gorm:"column:payment_window"` // minutes buyer has to pay
-	Status          AdvertisementStatus `gorm:"column:status;default:active"`
-	CreatedAt       time.Time           `gorm:"column:created_at;autoCreateTime"`
+	// SellerAddress is the seller's EVM payout address — escrow refunds (cancel,
+	// expiry, dispute-for-seller) are sent here by the on-chain contract.
+	SellerAddress string              `gorm:"column:seller_address"`
+	Status        AdvertisementStatus `gorm:"column:status;default:active"`
+	CreatedAt     time.Time           `gorm:"column:created_at;autoCreateTime"`
 }
 
 // P2POrder is a buyer's order against an advertisement.
-// Crypto is held in escrow until the seller confirms payment.
+// Crypto is held in an on-chain escrow contract until the seller confirms the
+// buyer's fiat payment (release) or the order is cancelled/expired (refund).
 type P2POrder struct {
 	P2POrderID      string      `gorm:"primaryKey;column:p2p_order_id"`
 	AdvertisementID string      `gorm:"column:advertisement_id;index"`
@@ -59,11 +64,24 @@ type P2POrder struct {
 	TotalIDR        float64     `gorm:"column:total_idr;type:numeric(20,2)"`  // fiat equivalent
 	Status          OrderStatus `gorm:"column:status;default:created"`
 	PaymentProofURL *string     `gorm:"column:payment_proof_url"`
-	EscrowWalletID  string      `gorm:"column:escrow_wallet_id"` // FK to wallets
-	CreatedAt       time.Time   `gorm:"column:created_at;autoCreateTime"`
-	PaidAt          *time.Time  `gorm:"column:paid_at"`
-	ReleasedAt      *time.Time  `gorm:"column:released_at"`
-	ExpiredAt       time.Time   `gorm:"column:expired_at"`
+	// EscrowWalletID is the legacy internal-ledger escrow wallet (nullable now
+	// that escrow is on-chain). Kept for backward compatibility.
+	EscrowWalletID *string `gorm:"column:escrow_wallet_id"`
+
+	// ── On-chain escrow fields ───────────────────────────────────────────────
+	BuyerAddress  string `gorm:"column:buyer_address"`  // EVM release destination
+	SellerAddress string `gorm:"column:seller_address"` // EVM refund destination
+	OnChainID     string `gorm:"column:on_chain_id"`    // bytes32 escrow key (hex)
+	EscrowState   string `gorm:"column:escrow_state;default:none"`
+	CreateTxHash  *string `gorm:"column:create_tx_hash"`
+	ReleaseTxHash *string `gorm:"column:release_tx_hash"`
+	RefundTxHash  *string `gorm:"column:refund_tx_hash"`
+	DisputeTxHash *string `gorm:"column:dispute_tx_hash"`
+
+	CreatedAt  time.Time  `gorm:"column:created_at;autoCreateTime"`
+	PaidAt     *time.Time `gorm:"column:paid_at"`
+	ReleasedAt *time.Time `gorm:"column:released_at"`
+	ExpiredAt  time.Time  `gorm:"column:expired_at"`
 }
 
 // P2PDispute is raised when a buyer/seller cannot resolve a P2POrder themselves.
@@ -84,8 +102,115 @@ type P2PDispute struct {
 
 var (
 	ErrAdvertisementNotFound = errors.New("advertisement not found")
+	ErrAdNotActive           = errors.New("advertisement is not active")
 	ErrP2POrderNotFound      = errors.New("p2p order not found")
 	ErrP2POrderExpired       = errors.New("p2p order has expired")
 	ErrDisputeNotFound       = errors.New("dispute not found")
+	ErrDisputeExists         = errors.New("a dispute is already open for this order")
 	ErrEscrowNotReleased     = errors.New("escrow has not been released")
+
+	ErrAmountOutOfRange = errors.New("amount is outside the advertisement's min/max range")
+	ErrSelfTrade        = errors.New("cannot create an order against your own advertisement")
+	ErrForbidden        = errors.New("not a participant in this order")
+	ErrInvalidState     = errors.New("order is not in a valid state for this action")
+	ErrInvalidAddress   = errors.New("a valid EVM payout address is required")
+	ErrInvalidInput     = errors.New("invalid input")
 )
+
+// ─── Filters & DTOs ────────────────────────────────────────────────────────
+
+// AdFilter narrows an advertisement listing query. Empty fields are ignored.
+type AdFilter struct {
+	PairID        string
+	PaymentMethod string
+	Status        AdvertisementStatus
+	Limit         int
+	Offset        int
+}
+
+// CreateAdInput is the payload to post a sell advertisement.
+type CreateAdInput struct {
+	PairID        string
+	Price         float64
+	MinAmount     float64
+	MaxAmount     float64
+	PaymentMethod string
+	PaymentWindow int    // minutes
+	SellerAddress string // EVM refund destination
+}
+
+// CreateOrderInput is the payload to open an order against an advertisement.
+type CreateOrderInput struct {
+	AdvertisementID string
+	Amount          float64 // crypto amount to buy
+	BuyerAddress    string  // EVM release destination
+}
+
+// OpenDisputeInput is the payload to raise a dispute on an order.
+type OpenDisputeInput struct {
+	Reason      string
+	EvidenceURL *string
+}
+
+// OnChainEscrow is a chain-agnostic view of an escrow's on-chain state.
+type OnChainEscrow struct {
+	Buyer     string `json:"buyer"`
+	Seller    string `json:"seller"`
+	AmountWei string `json:"amount_wei"`
+	State     string `json:"state"`
+	CreatedAt uint64 `json:"created_at"`
+}
+
+// ─── Ports (interfaces) ──────────────────────────────────────────────────────
+
+// Repository persists P2P advertisements, orders, and disputes.
+type Repository interface {
+	// Advertisements
+	CreateAd(ctx context.Context, ad *P2PAdvertisement) error
+	GetAd(ctx context.Context, id string) (*P2PAdvertisement, error)
+	ListAds(ctx context.Context, f AdFilter) ([]P2PAdvertisement, error)
+	ListAdsBySeller(ctx context.Context, sellerID string) ([]P2PAdvertisement, error)
+	UpdateAdStatus(ctx context.Context, id string, status AdvertisementStatus) error
+
+	// Orders
+	CreateOrder(ctx context.Context, o *P2POrder) error
+	GetOrder(ctx context.Context, id string) (*P2POrder, error)
+	UpdateOrder(ctx context.Context, o *P2POrder) error
+	ListOrdersByUser(ctx context.Context, userID string) ([]P2POrder, error)
+
+	// Disputes
+	CreateDispute(ctx context.Context, d *P2PDispute) error
+	GetDispute(ctx context.Context, id string) (*P2PDispute, error)
+	GetDisputeByOrder(ctx context.Context, orderID string) (*P2PDispute, error)
+	ListOpenDisputes(ctx context.Context) ([]P2PDispute, error)
+	UpdateDispute(ctx context.Context, d *P2PDispute) error
+}
+
+// Usecase is the user-facing P2P marketplace API (advertisements, orders,
+// disputes), backed by an on-chain escrow contract.
+type Usecase interface {
+	// Advertisements
+	CreateAd(ctx context.Context, sellerID string, in CreateAdInput) (*P2PAdvertisement, error)
+	ListAds(ctx context.Context, f AdFilter) ([]P2PAdvertisement, error)
+	GetAd(ctx context.Context, id string) (*P2PAdvertisement, error)
+	MyAds(ctx context.Context, sellerID string) ([]P2PAdvertisement, error)
+	SetAdStatus(ctx context.Context, sellerID, adID string, status AdvertisementStatus) error
+
+	// Orders
+	CreateOrder(ctx context.Context, buyerID string, in CreateOrderInput) (*P2POrder, error)
+	MarkPaid(ctx context.Context, userID, orderID string, proofURL *string) (*P2POrder, error)
+	ReleaseOrder(ctx context.Context, userID, orderID string) (*P2POrder, error)
+	CancelOrder(ctx context.Context, userID, orderID string) (*P2POrder, error)
+	GetOrder(ctx context.Context, userID, orderID string) (*P2POrder, error)
+	MyOrders(ctx context.Context, userID string) ([]P2POrder, error)
+	EscrowInfo(ctx context.Context, userID, orderID string) (OnChainEscrow, error)
+
+	// Disputes
+	OpenDispute(ctx context.Context, userID, orderID string, in OpenDisputeInput) (*P2PDispute, error)
+}
+
+// AdminUsecase is the admin-facing P2P dispute resolution API.
+type AdminUsecase interface {
+	ListOpenDisputes(ctx context.Context) ([]P2PDispute, error)
+	ResolveDispute(ctx context.Context, adminID, disputeID string, releaseToBuyer bool, resolution string) (*P2PDispute, error)
+}

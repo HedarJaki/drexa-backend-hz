@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -24,6 +25,10 @@ import (
 	"drexa/internal/matching"
 	"drexa/internal/order"
 	orderRepo "drexa/internal/order/repository"
+	"drexa/internal/p2p"
+	p2pChain "drexa/internal/p2p/chain"
+	p2pRepo "drexa/internal/p2p/repository"
+	p2pUc "drexa/internal/p2p/usecase"
 	"drexa/internal/platform/middleware"
 	walletRepo "drexa/internal/wallet/repository"
 	walletSvc "drexa/internal/wallet/service"
@@ -141,6 +146,29 @@ func NewServer(cfg *config.Config, db *gorm.DB) *Server {
 	go marketHub.Run()
 	go market.NewBinanceWSClient(marketHub).Run()
 
+	// ── P2P marketplace (on-chain smart-contract escrow) ───────────────────────
+	p2pRepository := p2pRepo.New(db)
+	var escrowClient p2pChain.EscrowClient
+	escrowClient, escrowErr := p2pChain.New(context.Background(), p2pChain.Config{
+		RPCURL:          cfg.Escrow.RPCURL,
+		ChainID:         cfg.Escrow.ChainID,
+		ContractAddress: cfg.Escrow.ContractAddress,
+		PrivateKey:      cfg.Escrow.PrivateKey,
+	})
+	if escrowErr != nil {
+		if errors.Is(escrowErr, p2pChain.ErrNotConfigured) {
+			log.Warn().Msg("p2p escrow chain client not configured; P2P escrow endpoints will return 503")
+		} else {
+			log.Error().Err(escrowErr).Msg("p2p escrow chain client init failed; falling back to disabled")
+		}
+		escrowClient = p2pChain.NewDisabled()
+	} else {
+		log.Info().Msg("p2p escrow chain client connected")
+	}
+	p2pUsecase := p2pUc.New(p2pRepository, escrowClient, cfg.Escrow.ConfirmTimeout)
+	p2pAdminUsecase := p2pUc.NewAdmin(p2pRepository, escrowClient, cfg.Escrow.ConfirmTimeout)
+	p2pHandler := p2p.NewHandler(p2pUsecase, p2pAdminUsecase, getUserID)
+
 	// ── Checkout domain ───────────────────────────────────────────────────────
 	var checkoutHandler *checkout.Handler
 	if cfg.Stripe.SecretKey != "" {
@@ -157,7 +185,7 @@ func NewServer(cfg *config.Config, db *gorm.DB) *Server {
 
 	// ── HTTP ──────────────────────────────────────────────────────────────────
 	mux := http.NewServeMux()
-	addRoutes(mux, cfg, authUsecase, kycHandler, orderService, walletUsecase, adminWalletUsecase, cryptoWalletUsecase, marketHub, tokenService, checkoutHandler)
+	addRoutes(mux, cfg, authUsecase, kycHandler, orderService, walletUsecase, adminWalletUsecase, cryptoWalletUsecase, marketHub, tokenService, checkoutHandler, p2pHandler)
 
 	// CORS must run before everything else so it can answer preflight OPTIONS
 	// and attach credential headers to every response.

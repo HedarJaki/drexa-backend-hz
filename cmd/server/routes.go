@@ -8,6 +8,7 @@ import (
 	"drexa/internal/kyc"
 	"drexa/internal/market"
 	"drexa/internal/order"
+	"drexa/internal/p2p"
 	"drexa/internal/wallet"
 	"drexa/pkg/config"
 )
@@ -24,6 +25,7 @@ func addRoutes(
 	marketHub *market.Hub,
 	tokenSvc auth.TokenService,
 	checkoutH *checkout.Handler,
+	p2pH *p2p.Handler,
 ) {
 	mux.Handle("/", http.NotFoundHandler())
 
@@ -110,4 +112,26 @@ func addRoutes(
 
 	// ── Market data (public real-time WebSocket feed) ─────────────────────────
 	mux.Handle("/api/v1/market/ws", market.HandleWebSocket(marketHub))
+
+	// ── P2P marketplace (on-chain escrow) ─────────────────────────────────────
+	// Advertisements
+	mux.Handle("POST /api/v1/p2p/ads",            jwt(http.HandlerFunc(p2pH.CreateAd)))
+	mux.Handle("GET /api/v1/p2p/ads",             jwt(http.HandlerFunc(p2pH.ListAds)))
+	mux.Handle("GET /api/v1/p2p/ads/mine",        jwt(http.HandlerFunc(p2pH.MyAds)))
+	mux.Handle("GET /api/v1/p2p/ads/{id}",        jwt(http.HandlerFunc(p2pH.GetAd)))
+	mux.Handle("POST /api/v1/p2p/ads/{id}/status", jwt(http.HandlerFunc(p2pH.SetAdStatus)))
+
+	// Orders + escrow lifecycle
+	mux.Handle("POST /api/v1/p2p/orders",                jwt(http.HandlerFunc(p2pH.CreateOrder)))
+	mux.Handle("GET /api/v1/p2p/orders/mine",            jwt(http.HandlerFunc(p2pH.MyOrders)))
+	mux.Handle("GET /api/v1/p2p/orders/{id}",            jwt(http.HandlerFunc(p2pH.GetOrder)))
+	mux.Handle("GET /api/v1/p2p/orders/{id}/escrow",     jwt(http.HandlerFunc(p2pH.EscrowInfo)))
+	mux.Handle("POST /api/v1/p2p/orders/{id}/paid",      jwt(http.HandlerFunc(p2pH.MarkPaid)))
+	mux.Handle("POST /api/v1/p2p/orders/{id}/release",   jwt(http.HandlerFunc(p2pH.ReleaseOrder)))
+	mux.Handle("POST /api/v1/p2p/orders/{id}/cancel",    jwt(http.HandlerFunc(p2pH.CancelOrder)))
+	mux.Handle("POST /api/v1/p2p/orders/{id}/dispute",   jwt(http.HandlerFunc(p2pH.OpenDispute)))
+
+	// P2P — admin dispute resolution (JWT + admin role)
+	mux.Handle("GET /api/v1/admin/p2p/disputes",                  jwt(admin(http.HandlerFunc(p2pH.AdminListDisputes))))
+	mux.Handle("POST /api/v1/admin/p2p/disputes/{id}/resolve",    jwt(admin(http.HandlerFunc(p2pH.AdminResolveDispute))))
 }

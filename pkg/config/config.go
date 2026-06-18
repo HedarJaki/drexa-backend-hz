@@ -32,6 +32,7 @@ type Config struct {
 	PayPal   PayPalConfig
 	Didit    DiditConfig
 	Google   GoogleConfig
+	Escrow   EscrowConfig
 }
 
 type GoogleConfig struct {
@@ -113,6 +114,17 @@ type DiditConfig struct {
 	WorkflowID    string
 }
 
+// EscrowConfig configures the on-chain P2P escrow smart-contract integration.
+// Leave RPCURL / ContractAddress / PrivateKey empty to disable on-chain escrow
+// (P2P escrow endpoints then return a clear "not configured" error).
+type EscrowConfig struct {
+	RPCURL          string        // EVM JSON-RPC endpoint (local node or Sepolia)
+	ChainID         int64         // 0 = auto-detect from the node
+	ContractAddress string        // deployed P2PEscrow address
+	PrivateKey      string        // platform signer = contract arbiter (SECRET; never log)
+	ConfirmTimeout  time.Duration // max wait for a tx to be mined
+}
+
 func Load() *Config {
 	_ = godotenv.Load() // optional; env vars take precedence
 	viper.AutomaticEnv()
@@ -135,6 +147,9 @@ func Load() *Config {
 	viper.SetDefault("PAYPAL_BASE_URL", "https://api-m.sandbox.paypal.com")
 	// Didit "Drexa" KYC workflow. Per-session config, not a secret — overridable via env.
 	viper.SetDefault("DIDIT_WORKFLOW_ID", "3b3ef226-0f3f-49cb-9be6-9fbfc19a0885")
+	// On-chain P2P escrow. ChainID 0 auto-detects from the node.
+	viper.SetDefault("ESCROW_CHAIN_ID", 0)
+	viper.SetDefault("ESCROW_CONFIRM_TIMEOUT", "90s")
 
 	return &Config{
 		App: AppConfig{
@@ -200,6 +215,13 @@ func Load() *Config {
 		},
 		Google: GoogleConfig{
 			ClientID: viper.GetString("GOOGLE_CLIENT_ID"),
+		},
+		Escrow: EscrowConfig{
+			RPCURL:          viper.GetString("ESCROW_RPC_URL"),
+			ChainID:         viper.GetInt64("ESCROW_CHAIN_ID"),
+			ContractAddress: viper.GetString("ESCROW_CONTRACT_ADDRESS"),
+			PrivateKey:      viper.GetString("ESCROW_PRIVATE_KEY"),
+			ConfirmTimeout:  viper.GetDuration("ESCROW_CONFIRM_TIMEOUT"),
 		},
 	}
 }
