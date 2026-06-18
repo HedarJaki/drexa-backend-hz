@@ -14,14 +14,20 @@ type Config struct {
 	Twilio   TwilioConfig
 	SendGrid SendGridConfig
 	Tatum    TatumConfig
+	Google   GoogleConfig
+}
+
+type GoogleConfig struct {
+	ClientID string
 }
 
 type AppConfig struct {
-	Port         string
-	Env          string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	IdleTimeout  time.Duration
+	Port           string
+	Env            string
+	AllowedOrigins []string
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	IdleTimeout    time.Duration
 }
 
 type DBConfig struct {
@@ -70,11 +76,12 @@ func Load() *Config {
 
 	return &Config{
 		App: AppConfig{
-			Port:         viper.GetString("APP_PORT"),
-			Env:          viper.GetString("APP_ENV"),
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
-			IdleTimeout:  120 * time.Second,
+			Port:           viper.GetString("APP_PORT"),
+			Env:            viper.GetString("APP_ENV"),
+			AllowedOrigins: []string{"http://localhost:3000", "http://localhost:3001"},
+			ReadTimeout:    5 * time.Second,
+			WriteTimeout:   10 * time.Second,
+			IdleTimeout:    120 * time.Second,
 		},
 		DB: DBConfig{
 			DSN:             viper.GetString("DB_DSN"),
@@ -100,6 +107,9 @@ func Load() *Config {
 		},
 		Tatum: TatumConfig{
 			APIKey: viper.GetString("TATUM_TESTNET_API_KEY"),
+		},
+		Google: GoogleConfig{
+			ClientID: viper.GetString("GOOGLE_CLIENT_ID"),
 		},
 	}
 }
