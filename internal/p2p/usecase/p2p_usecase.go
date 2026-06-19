@@ -152,7 +152,7 @@ func (s *service) CreateOrder(ctx context.Context, buyerID string, in p2p.Create
 		BuyerID:         buyerID,
 		SellerID:        ad.SellerID,
 		Amount:          in.Amount,
-		TotalIDR:        in.Amount * ad.Price,
+		TotalUSD:        in.Amount * ad.Price,
 		Status:          p2p.P2POrderCreated,
 		BuyerAddress:    in.BuyerAddress,
 		SellerAddress:   ad.SellerAddress,

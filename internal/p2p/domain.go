@@ -61,7 +61,7 @@ type P2POrder struct {
 	BuyerID         string      `gorm:"column:buyer_id;index"`
 	SellerID        string      `gorm:"column:seller_id;index"`
 	Amount          float64     `gorm:"column:amount;type:numeric(36,18)"`    // crypto amount
-	TotalIDR        float64     `gorm:"column:total_idr;type:numeric(20,2)"`  // fiat equivalent
+	TotalUSD        float64     `json:"total_usd" gorm:"column:total_usd;type:numeric(20,2)"`  // fiat equivalent
 	Status          OrderStatus `gorm:"column:status;default:created"`
 	PaymentProofURL *string     `gorm:"column:payment_proof_url"`
 	// EscrowWalletID is the legacy internal-ledger escrow wallet (nullable now
